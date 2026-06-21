@@ -67,8 +67,6 @@ jobs:
             cp configs/wsa/config-wsa-arm64 .config
           fi
 
-          # 追加 ReSukiSU 配置（单行写法，无 YAML 缩进冲突）
-          printf '# ReSukiSU\nCONFIG_KSU=y\nCONFIG_KSU_MANUAL_HOOK=y\n' >> .config
 
           # 非交互式补全所有依赖配置
           yes "" | make olddefconfig
