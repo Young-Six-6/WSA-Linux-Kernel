@@ -1,0 +1,106 @@
+name: Build WSA Kernel 5.15
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        required: true
+        type: choice
+        options:
+          - x64
+          - arm64
+      create_release:
+        description: "Auto create GitHub Release"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  KERNEL_TAG: android-lts/latte-2/5.15.78.1
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            clang \
+            lld \
+            llvm
+
+      - name: Verify toolchain availability
+        run: |
+          clang --version
+          ld.lld --version
+          llvm-ar --version
+          llvm-objdump --version
+          aarch64-linux-gnu-gcc --version
+
+      - name: Checkout WSA kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/WSA-Linux-Kernel
+          ref: ${{ env.KERNEL_TAG }}
+
+      - name: Configure kernel (non-interactive)
+        run: |
+          if [ "${{ github.event.inputs.arch }}" = "x64" ]; then
+            cp configs/wsa/config-wsa-x64 .config
+          else
+            cp configs/wsa/config-wsa-arm64 .config
+          fi
+          yes "" | make olddefconfig
+
+      - name: Build x64 kernel
+        if: github.event.inputs.arch == 'x64'
+        run: make -j$(nproc) LLVM=1 bzImage
+
+      - name: Build arm64 kernel
+        if: github.event.inputs.arch == 'arm64'
+        run: make -j$(nproc) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+
+      - name: Upload kernel artifact (x64)
+        if: github.event.inputs.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bzImage-5.15-x64
+          path: arch/x86/boot/bzImage
+
+      - name: Upload kernel artifact (arm64)
+        if: github.event.inputs.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-5.15-arm64
+          path: arch/arm64/boot/Image
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    if: github.event.inputs.create_release == 'true'
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wsa-kernel-5.15.78.1-${{ github.event.inputs.arch }}
+          name: WSA Kernel 5.15.78.1 (${{ github.event.inputs.arch }})
+          files: ./release/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
