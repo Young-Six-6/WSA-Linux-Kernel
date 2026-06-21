@@ -1,0 +1,120 @@
+name: Build WSA Kernel 5.15 (ReSukiSU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        required: true
+        type: choice
+        options:
+          - x64
+          - arm64
+      create_release:
+        description: "Auto create GitHub Release"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  KERNEL_TAG: android-lts/latte-2/5.15.78.1
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            clang \
+            lld \
+            llvm \
+            curl
+
+      - name: Verify toolchain availability
+        run: |
+          clang --version
+          ld.lld --version
+          llvm-ar --version
+          llvm-objdump --version
+          aarch64-linux-gnu-gcc --version
+
+      - name: Checkout WSA kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/WSA-Linux-Kernel
+          ref: ${{ env.KERNEL_TAG }}
+
+      - name: Integrate ReSukiSU into kernel tree
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+
+      - name: Configure kernel (with ReSukiSU, non-interactive)
+        run: |
+          if [ "${{ github.event.inputs.arch }}" = "x64" ]; then
+            cp configs/wsa/config-wsa-x64 .config
+          else
+            cp configs/wsa/config-wsa-arm64 .config
+          fi
+
+          # 追加 ReSukiSU 配置（单行写法，无 YAML 缩进冲突）
+          printf '# ReSukiSU\nCONFIG_KSU=y\nCONFIG_KSU_MANUAL_HOOK=y\n' >> .config
+
+          # 非交互式补全所有依赖配置
+          yes "" | make olddefconfig
+
+      - name: Build x64 kernel
+        if: github.event.inputs.arch == 'x64'
+        run: make -j$(nproc) LLVM=1 bzImage
+
+      - name: Build arm64 kernel
+        if: github.event.inputs.arch == 'arm64'
+        run: make -j$(nproc) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+
+      - name: Verify ReSukiSU config
+        run: |
+          grep -E "CONFIG_KSU|CONFIG_KSU_MANUAL_HOOK" .config
+
+      - name: Upload kernel artifact (x64)
+        if: github.event.inputs.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bzImage-5.15-x64-resukisu
+          path: arch/x86/boot/bzImage
+
+      - name: Upload kernel artifact (arm64)
+        if: github.event.inputs.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-5.15-arm64-resukisu
+          path: arch/arm64/boot/Image
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    if: github.event.inputs.create_release == 'true'
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: ./release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wsa-kernel-5.15.78.1-resukisu-${{ github.event.inputs.arch }}
+          name: WSA Kernel 5.15.78.1 with ReSukiSU (${{ github.event.inputs.arch }})
+          files: ./release/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
