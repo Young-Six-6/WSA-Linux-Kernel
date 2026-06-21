@@ -1,0 +1,133 @@
+name: Build WSA Kernel 5.15.104 (ReSukiSU)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        required: true
+        type: choice
+        options:
+          - x64
+          - arm64
+      create_release:
+        description: "Create GitHub Release"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: WSA-Resuki-5.15
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y --no-install-recommends \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            clang \
+            lld \
+            llvm \
+            curl
+
+      - name: Verify toolchain
+        run: |
+          clang --version
+          ld.lld --version
+          llvm-ar --version
+          llvm-objdump --version
+
+      - name: Integrate ReSukiSU
+        run: |
+          curl -LSs https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh | bash
+
+      - name: Configure kernel
+        run: |
+          if [ "${{ github.event.inputs.arch }}" = "x64" ]; then
+            cp configs/wsa/config-wsa-5.10 .config
+          else
+            cp configs/wsa/config-wsa-arm64-5.10 .config
+          fi
+
+          scripts/config --enable KSU
+          scripts/config --enable KSU_MANUAL_HOOK
+          scripts/config --enable KSU_MANUAL_HOOK_AUTO_SETUID_HOOK
+          scripts/config --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+          scripts/config --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK
+          scripts/config --disable KSU_TRACEPOINT_HOOK
+
+          # 按 ReSukiSU 文档启用
+          scripts/config --enable KALLSYMS_ALL
+
+          yes "" | make olddefconfig
+
+      - name: Verify config
+        run: |
+          grep "^CONFIG_KSU" .config || true
+          grep "^CONFIG_KALLSYMS" .config || true
+
+      - name: Show source info
+        run: |
+          git log --oneline -1
+          make kernelversion
+
+      - name: Build x64
+        if: github.event.inputs.arch == 'x64'
+        run: |
+          make -j$(nproc) LLVM=1 bzImage
+
+      - name: Build arm64
+        if: github.event.inputs.arch == 'arm64'
+        run: |
+          make -j$(nproc) LLVM=1 \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            Image
+
+      - name: Upload x64
+        if: github.event.inputs.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bzImage-5.10-x64-ReSukiSU
+          path: arch/x86/boot/bzImage
+
+      - name: Upload arm64
+        if: github.event.inputs.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-5.10-arm64-ReSukiSU
+          path: arch/arm64/boot/Image
+
+  release:
+    if: github.event.inputs.create_release == 'true'
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: WSA-5.10-ReSukiSU-${{ github.run_number }}-${{ github.event.inputs.arch }}
+          name: WSA Kernel 5.10 ReSukiSU (${{ github.event.inputs.arch }})
+          files: release/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
