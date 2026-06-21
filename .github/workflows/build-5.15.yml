@@ -18,55 +18,41 @@ on:
 
 env:
   KERNEL_TAG: android-lts/latte-2/5.15.78.1
-  LLVM_VERSION: 12
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Install base build dependencies
+      - name: Install build dependencies
         run: |
           sudo apt update
           sudo apt install -y --no-install-recommends \
             bc \
             bison \
             build-essential \
-            ca-certificates \
             flex \
-            git \
-            gnupg \
             libelf-dev \
             libssl-dev \
             libncurses-dev \
-            lsb-release \
-            software-properties-common \
-            wget \
+            gcc-aarch64-linux-gnu \
             binutils-aarch64-linux-gnu \
-            gcc-aarch64-linux-gnu
+            clang \
+            lld \
+            llvm
+
+      - name: Verify toolchain availability
+        run: |
+          clang --version
+          ld.lld --version
+          llvm-ar --version
+          llvm-objdump --version
+          aarch64-linux-gnu-gcc --version
 
       - name: Checkout WSA kernel source
         uses: actions/checkout@v4
         with:
           repository: microsoft/WSA-Linux-Kernel
           ref: ${{ env.KERNEL_TAG }}
-
-      - name: Setup LLVM 12 (official apt.llvm.org script)
-        run: |
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh ${{ env.LLVM_VERSION }}
-          rm ./llvm.sh
-
-          # Unified symlinks for full LLVM toolchain
-          sudo ln -sf /usr/bin/clang-${{ env.LLVM_VERSION }} /usr/bin/clang
-          sudo ln -sf /usr/bin/clang++-${{ env.LLVM_VERSION }} /usr/bin/clang++
-          sudo ln -sf /usr/bin/ld.lld-${{ env.LLVM_VERSION }} /usr/bin/ld.lld
-          sudo ln -sf /usr/bin/llvm-ar-${{ env.LLVM_VERSION }} /usr/bin/llvm-ar
-          sudo ln -sf /usr/bin/llvm-nm-${{ env.LLVM_VERSION }} /usr/bin/llvm-nm
-          sudo ln -sf /usr/bin/llvm-strip-${{ env.LLVM_VERSION }} /usr/bin/llvm-strip
-          sudo ln -sf /usr/bin/llvm-objcopy-${{ env.LLVM_VERSION }} /usr/bin/llvm-objcopy
-          sudo ln -sf /usr/bin/llvm-objdump-${{ env.LLVM_VERSION }} /usr/bin/llvm-objdump
-          sudo ln -sf /usr/bin/llvm-readelf-${{ env.LLVM_VERSION }} /usr/bin/llvm-readelf
 
       - name: Configure kernel (non-interactive)
         run: |
@@ -75,7 +61,6 @@ jobs:
           else
             cp configs/wsa/config-wsa-arm64 .config
           fi
-          # Auto answer all new config options with default values
           yes "" | make olddefconfig
 
       - name: Build x64 kernel
