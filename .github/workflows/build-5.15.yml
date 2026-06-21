@@ -18,7 +18,6 @@ jobs:
 build:
 runs-on: ubuntu-22.04
 
-```
 steps:
   - name: Checkout source
     uses: actions/checkout@v4
@@ -65,4 +64,3 @@ steps:
     with:
       name: Image-5.15-arm64
       path: arch/arm64/boot/Image
-```
