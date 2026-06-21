@@ -1,66 +1,73 @@
 name: Build WSA Kernel 5.15
 
 on:
-workflow_dispatch:
-inputs:
-arch:
-description: Target architecture
-required: true
-type: choice
-options:
-- x64
-- arm64
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target architecture"
+        required: true
+        type: choice
+        options:
+          - x64
+          - arm64
 
 env:
-KERNEL_TAG: android-lts/latte-2/5.15.78.1
+  KERNEL_TAG: android-lts/latte-2/5.15.78.1
 
 jobs:
-build:
-runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/WSA-Linux-Kernel
+          ref: ${{ env.KERNEL_TAG }}
 
-steps:
-  - name: Checkout source
-    uses: actions/checkout@v4
-    with:
-      repository: microsoft/WSA-Linux-Kernel
-      ref: ${{ env.KERNEL_TAG }}
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            gcc-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
+            clang-12 \
+            lld-12 \
+            llvm-12
 
-  - name: Install dependencies
-    run: |
-      sudo apt update
-      sudo apt install -y \
-        bc bison build-essential flex \
-        libelf-dev libssl-dev libncurses-dev \
-        gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
-        clang-12 lld-12 llvm-12
+          sudo ln -sf /usr/bin/clang-12 /usr/bin/clang
+          sudo ln -sf /usr/bin/ld.lld-12 /usr/bin/ld.lld
 
-      sudo ln -sf /usr/bin/clang-12 /usr/bin/clang
-      sudo ln -sf /usr/bin/ld.lld-12 /usr/bin/ld.lld
+      - name: Build x64
+        if: github.event.inputs.arch == 'x64'
+        run: |
+          cp configs/wsa/config-wsa-x64 .config
+          make olddefconfig
+          make -j$(nproc) LLVM=1 bzImage
 
-  - name: Build x64
-    if: github.event.inputs.arch == 'x64'
-    run: |
-      cp configs/wsa/config-wsa-x64 .config
-      make olddefconfig
-      make -j$(nproc) LLVM=1 bzImage
+      - name: Build arm64
+        if: github.event.inputs.arch == 'arm64'
+        run: |
+          cp configs/wsa/config-wsa-arm64 .config
+          make olddefconfig
+          make -j$(nproc) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
 
-  - name: Build arm64
-    if: github.event.inputs.arch == 'arm64'
-    run: |
-      cp configs/wsa/config-wsa-arm64 .config
-      make olddefconfig
-      make -j$(nproc) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image
+      - name: Upload x64 kernel
+        if: github.event.inputs.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bzImage-5.15
+          path: arch/x86/boot/bzImage
 
-  - name: Upload x64 kernel
-    if: github.event.inputs.arch == 'x64'
-    uses: actions/upload-artifact@v4
-    with:
-      name: bzImage-5.15
-      path: arch/x86/boot/bzImage
-
-  - name: Upload arm64 kernel
-    if: github.event.inputs.arch == 'arm64'
-    uses: actions/upload-artifact@v4
-    with:
-      name: Image-5.15-arm64
-      path: arch/arm64/boot/Image
+      - name: Upload arm64 kernel
+        if: github.event.inputs.arch == 'arm64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image-5.15-arm64
+          path: arch/arm64/boot/Image
