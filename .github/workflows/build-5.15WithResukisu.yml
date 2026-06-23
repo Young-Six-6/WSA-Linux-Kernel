@@ -66,8 +66,9 @@ jobs:
           else
             cp configs/wsa/config-wsa-arm64 .config
           fi
-
-
+          
+          printf '# ReSukiSU\nCONFIG_KSU=y\nCONFIG_KSU_MANUAL_HOOK=y\n' >> .config
+          printf '# ReSukiSU\nCONFIG_KSU=y\nCONFIG_KSU_MANUAL_HOOK=y\n# 自动LSM setuid钩子\nCONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK=y\n# 自动input钩子\nCONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK=y\n# 自动initrc LSM钩子\nCONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK=y\n# 完整符号表（必须，手动钩子/自动钩子都依赖）\nCONFIG_KALLSYMS_ALL=y\n' >> .config
           # 非交互式补全所有依赖配置
           yes "" | make olddefconfig
 
