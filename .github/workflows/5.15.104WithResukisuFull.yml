@@ -70,6 +70,8 @@ jobs:
           scripts/config --enable KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
           scripts/config --enable KSU_MANUAL_HOOK_AUTO_INITRC_HOOK
           scripts/config --disable KSU_TRACEPOINT_HOOK
+          scripts/config --set-val SECURITY_SELINUX_BOOTPARAM_VALUE 0
+          scripts/config --enable SECURITY_SELINUX_BOOTPARAM
 
           # 按 ReSukiSU 文档启用
           scripts/config --enable KALLSYMS_ALL
